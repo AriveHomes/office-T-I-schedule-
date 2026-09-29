@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#164d3a" />
+  <title>North Pointe T/I Schedule</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="app-header">
+    <div class="brand-wrap">
+      <div class="brand-mark">A</div>
+      <div>
+        <div class="brand-name">ARIVE</div>
+        <div class="brand-subtitle">North Pointe T/I</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="sync-chip local" id="syncStatusBtn" title="Configure Google Sheets sync"><span class="sync-dot"></span><span id="syncStatusText">Connect Google Sheet</span></button>
+      <button class="btn ghost" id="refreshBtn" title="Reload schedule from Google Sheets">Refresh</button>
+      <button class="btn ghost" id="undoBtn" title="Undo last schedule change">Undo</button>
+      <button class="btn ghost" id="baselineBtn">Save Baseline</button>
+      <button class="btn ghost" id="exportBtn">Export</button>
+      <button class="btn primary" id="addTaskBtn">+ Add Schedule Item</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="project-strip">
+      <div>
+        <div class="eyebrow">ACTIVE PROJECT</div>
+        <h1>North Pointe Building — Tenant Improvement</h1>
+        <p>Units 302 + 304, tenant-protected common areas, Level 2 swing space</p>
+      </div>
+      <div class="project-stats">
+        <div class="stat"><span>Start</span><strong id="projectStartLabel">Nov 2, 2026</strong></div>
+        <div class="stat"><span>Projected finish</span><strong id="projectFinishLabel">—</strong></div>
+        <div class="stat"><span>Workdays</span><strong id="workdayCount">—</strong></div>
+        <div class="stat status-stat"><span>Tenant access</span><strong id="conflictCount" class="status-good">0 conflicts</strong></div>
+      </div>
+    </section>
+
+    <section class="rules-card">
+      <div class="rules-title">
+        <span class="shield">✓</span>
+        <div>
+          <strong>Tenant Protection Rules</strong>
+          <small>Built into the conflict checker</small>
+        </div>
+      </div>
+      <div class="rule-pills">
+        <span>301 + 303 open Mon–Fri 8–5</span>
+        <span>Keep one 3rd-floor restroom available</span>
+        <span>Maintain a clear egress route</span>
+        <span>Level 2 = Arive swing space until move-back</span>
+        <span>No weekend workdays</span>
+      </div>
+    </section>
+
+    <section id="warningPanel" class="warning-panel hidden"></section>
+
+    <section class="toolbar">
+      <div class="view-tabs" role="tablist">
+        <button class="view-tab active" data-view="gantt">Gantt</button>
+        <button class="view-tab" data-view="list">List</button>
+        <button class="view-tab" data-view="agenda">Agenda</button>
+      </div>
+      <div class="toolbar-right">
+        <label class="search-wrap"><span>⌕</span><input id="searchInput" placeholder="Search schedule" /></label>
+        <select id="phaseFilter" class="control"><option value="all">All phases</option></select>
+        <label class="toggle-wrap"><input id="autoShiftToggle" type="checkbox" checked /><span></span>Auto-shift dependencies</label>
+        <select id="zoomSelect" class="control" title="Gantt zoom">
+          <option value="day">Day</option>
+          <option value="week" selected>Week</option>
+        </select>
+        <button class="btn ghost compact" id="todayBtn">Project Start</button>
+      </div>
+    </section>
+
+    <section id="ganttView" class="schedule-card view-panel active">
+      <div class="gantt-shell" id="ganttShell">
+        <div class="task-pane">
+          <div class="task-header grid-row">
+            <div class="cell task-title-col">Schedule item</div>
+            <div class="cell owner-col">Assigned</div>
+            <div class="cell duration-col">Days</div>
+            <div class="cell impact-col">Impact</div>
+          </div>
+          <div id="taskRows"></div>
+        </div>
+        <div class="timeline-pane" id="timelinePane">
+          <div id="timelineHeader" class="timeline-header"></div>
+          <div id="timelineBody" class="timeline-body"></div>
+        </div>
+      </div>
+      <div class="legend">
+        <span><i class="legend-swatch unit-work"></i>Unit 302/304</span>
+        <span><i class="legend-swatch common-work"></i>Common area</span>
+        <span><i class="legend-swatch move-work"></i>Move / turnover</span>
+        <span><i class="legend-swatch high-impact"></i>Tenant coordination</span>
+        <span class="legend-note">Drag a bar to move it • drag either end to resize • double-click to edit</span>
+      </div>
+    </section>
+
+    <section id="listView" class="schedule-card view-panel">
+      <div class="table-scroll"><table class="list-table"><thead><tr><th>Task</th><th>Phase</th><th>Start</th><th>Finish</th><th>Workdays</th><th>Assigned</th><th>Progress</th><th>Tenant impact</th><th>Work window</th><th>Predecessor</th></tr></thead><tbody id="listRows"></tbody></table></div>
+    </section>
+
+    <section id="agendaView" class="schedule-card view-panel">
+      <div id="agendaRows" class="agenda-wrap"></div>
+    </section>
+  </main>
+
+  <dialog id="taskDialog" class="modal">
+    <form method="dialog" id="taskForm">
+      <div class="modal-head">
+        <div><div class="eyebrow">SCHEDULE ITEM</div><h2 id="dialogTitle">Add task</h2></div>
+        <button class="icon-btn" value="cancel" type="button" id="closeDialogBtn">×</button>
+      </div>
+      <input type="hidden" id="taskId" />
+      <div class="form-grid">
+        <label class="full">Title<input id="taskTitle" required /></label>
+        <label>Phase<select id="taskPhase"></select></label>
+        <label>Assigned to<input id="taskOwner" placeholder="GC / trade / owner" /></label>
+        <label>Start date<input id="taskStart" type="date" required /></label>
+        <label>Duration (workdays)<input id="taskDuration" type="number" min="1" max="120" required /></label>
+        <label>Progress<select id="taskProgress"><option value="0">0%</option><option value="25">25%</option><option value="50">50%</option><option value="75">75%</option><option value="100">100%</option></select></label>
+        <label>Tenant impact<select id="taskImpact"><option>Low</option><option>Medium</option><option>High</option></select></label>
+        <label>Work window<input id="taskWorkWindow" placeholder="Day / after-hours / phased" /></label>
+        <label>Predecessor<select id="taskDependency"><option value="">None</option></select></label>
+        <label>Dependency type<select id="taskDependencyType"><option value="FS">Finish → Start</option><option value="SS">Start → Start</option></select></label>
+        <label class="full">Notes<textarea id="taskNotes" rows="3" placeholder="Access plan, shutdown notes, trade coordination, etc."></textarea></label>
+        <label class="check full"><input id="taskAccessCritical" type="checkbox" /> This work affects the primary tenant access / egress path</label>
+        <label class="full">Constraint group<select id="taskConstraint"><option value="">None</option><option value="f3-restroom">3rd floor restrooms — do not overlap</option><option value="f3-access">3rd floor access zones — do not overlap</option></select></label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="deleteTaskBtn" class="btn danger hidden">Delete</button>
+        <span class="spacer"></span>
+        <button type="button" id="cancelTaskBtn" class="btn ghost">Cancel</button>
+        <button type="submit" class="btn primary">Save Item</button>
+      </div>
+    </form>
+  </dialog>
+
+
+  <dialog id="connectionDialog" class="modal small-modal">
+    <div class="modal-head"><div><div class="eyebrow">GOOGLE SHEETS SYNC</div><h2>Connect schedule storage</h2></div><button class="icon-btn" id="closeConnectionBtn">×</button></div>
+    <div class="connection-note">The dashboard stays fast in your browser, but the Google Sheet is the permanent source of truth. Your GitHub dashboard stores the live schedule in Google Sheets. The Web App URL is prefilled; paste the API Token from the <strong>Project Settings</strong> tab once on this browser. No schedule data is stored in GitHub.</div>
+    <div class="connection-grid">
+      <label>Apps Script Web App URL<input id="appsScriptUrl" placeholder="https://script.google.com/macros/s/.../exec" /></label>
+      <label>API Token<input id="apiTokenInput" type="password" placeholder="Paste token from Project Settings" /></label>
+    </div>
+    <div id="connectionStatus" class="connection-status">Not connected.</div>
+    <div class="modal-actions"><button class="btn ghost" id="disconnectBtn" type="button">Use Local Only</button><span class="spacer"></span><button class="btn ghost" id="testConnectionBtn" type="button">Test Connection</button><button class="btn primary" id="saveConnectionBtn" type="button">Connect + Load Sheet</button></div>
+  </dialog>
+
+  <dialog id="exportDialog" class="modal small-modal">
+    <div class="modal-head"><div><div class="eyebrow">EXPORT / BACKUP</div><h2>Schedule data</h2></div><button class="icon-btn" id="closeExportBtn">×</button></div>
+    <p class="muted">Download a portable backup or CSV. The live schedule keeps a browser backup and, when connected, saves the permanent copy to Google Sheets.</p>
+    <div class="export-buttons">
+      <button class="btn primary" id="downloadJsonBtn">Download JSON Backup</button>
+      <button class="btn ghost" id="downloadCsvBtn">Download CSV</button>
+      <label class="btn ghost file-btn">Import JSON<input type="file" id="importJsonInput" accept="application/json" /></label>
+      <button class="btn ghost" id="resetBtn">Reset to Original Schedule</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast"></div>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
